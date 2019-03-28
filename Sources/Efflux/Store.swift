@@ -6,45 +6,54 @@
 //
 
 import Foundation
-import Result
-import ReactiveSwift
 
-class Store<R: Reducer> {
+open class Store<R: Reducer> {
+    private let lockQueue = DispatchQueue(label: "Efflux id lock queue")
+    public class StoreSubscription: Subscription {
+        weak var store: Store?
+        var id: Int64
+        init(_ store: Store, _ id: Int64) {
+            self.store = store
+            self.id = id
+        }
+        public func unsubscribe() {
+            store?.subscribers[id] = nil
+        }
+    }
     var state: R.State
-    private var inputPort: Signal<R.Action, NoError>.Observer
-    private var outputPort: Signal<R.Event, NoError>
     var reducer: R
+    var subscribers: [Int64: (R.Event, R.State) -> Void]
+    private var latestId: Int64 = 0
 
     public init(state: R.State, reducer: R) {
         self.state = state
-        let inputPipe = Signal<R.Action, NoError>.pipe()
-        let outputPipe = Signal<R.Event, NoError>.pipe()
-        self.inputPort = inputPipe.input
-        self.outputPort = outputPipe.output
         self.reducer = reducer
-        inputPipe.output.observeValues { [weak self] action in
-            guard let self = self else {
-                return
-            }
-            self.state = reducer.reduce(self.state, action)
-            let dispatch: (R.Action) -> Void = { (action: R.Action) -> Void in
-                self.dispatch(action)
-            }
-            reducer.effect(self.state, action, dispatch, outputPipe.input)
+        subscribers = [:]
+    }
+
+    private func reduce(_ action: R.Action) {
+        state = reducer.reduce(action, self.state)
+        let dispatch: (R.Action) -> () = { [weak self] in self?.dispatch($0) }
+        let getState: () -> R.State? = { [weak self] in self?.state }
+        let emit: (R.Event) -> () = { [weak self] in self?.emit($0) }
+        reducer.effect(action, getState, dispatch, emit)
+    }
+
+    public func emit(_ event: R.Event) {
+        for subscriber in subscribers.values {
+            subscriber(event, state)
         }
     }
 
-    func dispatch(_ action: R.Action) {
-        QueueScheduler.main.schedule { [weak self] in
-            self?.inputPort.send(value: action)
-        }
+    public func dispatch(_ action: R.Action) {
+        reduce(action)
     }
 
-    public func subscribe(_ handler: @escaping (R.Event, R.State) -> Void) -> Disposable? {
-        return outputPort.observeValues { [weak self] event in
-            guard let state = self?.state else { return }
-            handler(event, state)
-            return
+    public func subscribe(_ handler: @escaping (R.Event, R.State) -> Void) -> Subscription? {
+        lockQueue.sync {
+            latestId += 1
+            subscribers[latestId] = handler
         }
+        return StoreSubscription(self, latestId)
     }
 }
