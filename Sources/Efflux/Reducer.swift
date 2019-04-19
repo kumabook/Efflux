@@ -6,17 +6,16 @@
 //
 
 import Foundation
-import Result
-import ReactiveSwift
 
 public protocol Reducer {
     associatedtype Action
     associatedtype Event
     associatedtype State
 
+    typealias GetState = () -> State?
     typealias Dispatch = (Action) -> Void
-    typealias Observer = Signal<Event, NoError>.Observer
+    typealias Emit = (Event) -> ()
 
-    func reduce(_ state: State, _ action: Action) -> State
-    func effect(_ state: State, _ action: Action, _ dispatch: Dispatch, _ output: Observer)
+    func reduce(_ action: Action, _ state: State) -> State
+    func effect(_ action: Action, _ getState: GetState, _ dispatch: Dispatch, _ emit: Emit)
 }
