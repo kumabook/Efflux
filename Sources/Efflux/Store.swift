@@ -20,7 +20,7 @@ open class Store<R: Reducer> {
             store?.subscribers[id] = nil
         }
     }
-    var state: R.State
+    public private(set) var state: R.State
     var reducer: R
     var subscribers: [Int64: (R.Event, R.State) -> Void]
     private var latestId: Int64 = 0
