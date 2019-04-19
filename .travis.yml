@@ -4,6 +4,13 @@ env:
 
 matrix:
   include:
+    - &podspec
+      name: CocoaPods Lint
+      os: osx
+      language: objective-c
+      osx_image: xcode10.2
+      script:
+        - pod lib lint --allow-warnings
     - &swiftpm
       name: SwiftPM / Darwin / Swift 5.0
       os: osx
