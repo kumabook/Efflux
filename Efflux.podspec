@@ -1,7 +1,7 @@
 # coding: utf-8
 Pod::Spec.new do |spec|
   spec.name          = "Efflux"
-  spec.version       = "0.0.1"
+  spec.version       = "0.0.2"
   spec.summary       = "Flux implementation having redux-style state management and side effects"
   spec.homepage      = "https://github.com/kumabook/Efflux"
   spec.license       = "MIT"
