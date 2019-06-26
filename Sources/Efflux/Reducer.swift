@@ -17,5 +17,5 @@ public protocol Reducer {
     typealias Emit = (Event) -> ()
 
     func reduce(_ action: Action, _ state: State) -> State
-    func effect(_ action: Action, _ getState: GetState, _ dispatch: Dispatch, _ emit: Emit)
+    func effect(_ action: Action, _ getState:  @escaping GetState, _ dispatch: @escaping Dispatch, _ emit: @escaping Emit)
 }
