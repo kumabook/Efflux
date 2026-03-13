@@ -41,8 +41,10 @@ open class Store<R: Reducer> {
 
     public func emit(_ event: R.Event) {
         let state = self.state
+        let subscribers = Array(self.subscribers.values)
+        guard !subscribers.isEmpty else { return }
         let notify = {
-            for subscriber in self.subscribers.values {
+            for subscriber in subscribers {
                 subscriber(event, state)
             }
         }
