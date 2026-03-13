@@ -8,7 +8,12 @@
 import Foundation
 
 open class Store<R: Reducer> {
-    private let lockQueue = DispatchQueue(label: "Efflux id lock queue")
+    private let isolationQueue = DispatchQueue(label: "Efflux.Store.isolation")
+    private static var queueKey: DispatchSpecificKey<Void> {
+        return DispatchSpecificKey<Void>()
+    }
+    private let queueTag = DispatchSpecificKey<Void>()
+
     public class StoreSubscription: Subscription {
         weak var store: Store?
         var id: Int64
@@ -17,7 +22,7 @@ open class Store<R: Reducer> {
             self.id = id
         }
         public func unsubscribe() {
-            store?.subscribers[id] = nil
+            store?.removeSubscriber(id)
         }
     }
     public private(set) var state: R.State
@@ -29,6 +34,19 @@ open class Store<R: Reducer> {
         self.state = state
         self.reducer = reducer
         subscribers = [:]
+        isolationQueue.setSpecific(key: queueTag, value: ())
+    }
+
+    private var isOnIsolationQueue: Bool {
+        return DispatchQueue.getSpecific(key: queueTag) != nil
+    }
+
+    private func sync<T>(_ work: () -> T) -> T {
+        if isOnIsolationQueue {
+            return work()
+        } else {
+            return isolationQueue.sync(execute: work)
+        }
     }
 
     private func reduce(_ action: R.Action) {
@@ -40,30 +58,40 @@ open class Store<R: Reducer> {
     }
 
     public func emit(_ event: R.Event) {
-        let state = self.state
-        let subscribers = Array(self.subscribers.values)
-        guard !subscribers.isEmpty else { return }
-        let notify = {
-            for subscriber in subscribers {
-                subscriber(event, state)
+        sync {
+            let state = self.state
+            let subscribers = Array(self.subscribers.values)
+            guard !subscribers.isEmpty else { return }
+            let notify = {
+                for subscriber in subscribers {
+                    subscriber(event, state)
+                }
             }
-        }
-        if Thread.isMainThread {
-            notify()
-        } else {
-            DispatchQueue.main.async(execute: notify)
+            if Thread.isMainThread {
+                notify()
+            } else {
+                DispatchQueue.main.async(execute: notify)
+            }
         }
     }
 
     public func dispatch(_ action: R.Action) {
-        reduce(action)
+        sync {
+            self.reduce(action)
+        }
     }
 
     public func subscribe(_ handler: @escaping (R.Event, R.State) -> Void) -> Subscription? {
-        lockQueue.sync {
+        return sync {
             latestId += 1
             subscribers[latestId] = handler
+            return StoreSubscription(self, latestId)
         }
-        return StoreSubscription(self, latestId)
+    }
+
+    fileprivate func removeSubscriber(_ id: Int64) {
+        sync {
+            self.subscribers[id] = nil
+        }
     }
 }
