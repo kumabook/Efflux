@@ -40,8 +40,16 @@ open class Store<R: Reducer> {
     }
 
     public func emit(_ event: R.Event) {
-        for subscriber in subscribers.values {
-            subscriber(event, state)
+        let state = self.state
+        let notify = {
+            for subscriber in self.subscribers.values {
+                subscriber(event, state)
+            }
+        }
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.async(execute: notify)
         }
     }
 
