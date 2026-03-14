@@ -10,12 +10,12 @@ Pod::Spec.new do |spec|
   spec.swift_version = "5.0"
   spec.source_files  = "Sources/**/*.{swift,h,m}"
 
-  spec.ios.deployment_target = "8.0"
-  spec.osx.deployment_target = "10.9"
+  spec.ios.deployment_target = "12.0"
+  spec.osx.deployment_target = "10.13"
   if spec.respond_to?(:watchos)
-    spec.watchos.deployment_target = "2.0"
+    spec.watchos.deployment_target = "4.0"
   end
   if spec.respond_to?(:tvos)
-    spec.tvos.deployment_target = "9.0"
+    spec.tvos.deployment_target = "12.0"
   end
 end
