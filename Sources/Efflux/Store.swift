@@ -9,10 +9,9 @@ import Foundation
 
 open class Store<R: Reducer> {
     private let isolationQueue = DispatchQueue(label: "Efflux.Store.isolation")
-    private static var queueKey: DispatchSpecificKey<Void> {
-        return DispatchSpecificKey<Void>()
-    }
+    private let effectQueue = DispatchQueue(label: "Efflux.Store.effect")
     private let queueTag = DispatchSpecificKey<Void>()
+    private let effectTag = DispatchSpecificKey<Void>()
 
     public class StoreSubscription: Subscription {
         weak var store: Store?
@@ -25,20 +24,28 @@ open class Store<R: Reducer> {
             store?.removeSubscriber(id)
         }
     }
-    public private(set) var state: R.State
+    private var _state: R.State
+    public var state: R.State {
+        sync { _state }
+    }
     var reducer: R
     var subscribers: [Int64: (R.Event, R.State) -> Void]
     private var latestId: Int64 = 0
 
     public init(state: R.State, reducer: R) {
-        self.state = state
+        self._state = state
         self.reducer = reducer
         subscribers = [:]
         isolationQueue.setSpecific(key: queueTag, value: ())
+        effectQueue.setSpecific(key: effectTag, value: ())
     }
 
     private var isOnIsolationQueue: Bool {
         return DispatchQueue.getSpecific(key: queueTag) != nil
+    }
+
+    private var isOnEffectQueue: Bool {
+        return DispatchQueue.getSpecific(key: effectTag) != nil
     }
 
     private func sync<T>(_ work: () -> T) -> T {
@@ -49,35 +56,41 @@ open class Store<R: Reducer> {
         }
     }
 
-    private func reduce(_ action: R.Action) {
-        state = reducer.reduce(action, self.state)
-        let dispatch: (R.Action) -> () = { [weak self] in self?.dispatch($0) }
-        let getState: () -> R.State? = { [weak self] in self?.state }
-        let emit: (R.Event) -> () = { [weak self] in self?.emit($0) }
-        reducer.effect(action, getState, dispatch, emit)
+    private func syncEffect<T>(_ work: () -> T) -> T {
+        if isOnEffectQueue {
+            return work()
+        } else {
+            return effectQueue.sync(execute: work)
+        }
     }
 
     public func emit(_ event: R.Event) {
-        sync {
-            let state = self.state
+        let (state, subscribers): (R.State, [(R.Event, R.State) -> Void]) = sync {
             let subscribers = Array(self.subscribers.values)
-            guard !subscribers.isEmpty else { return }
-            let notify = {
-                for subscriber in subscribers {
-                    subscriber(event, state)
-                }
+            return (self._state, subscribers)
+        }
+        guard !subscribers.isEmpty else { return }
+        let notify = {
+            for subscriber in subscribers {
+                subscriber(event, state)
             }
-            if Thread.isMainThread {
-                notify()
-            } else {
-                DispatchQueue.main.async(execute: notify)
-            }
+        }
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.async(execute: notify)
         }
     }
 
     public func dispatch(_ action: R.Action) {
-        sync {
-            self.reduce(action)
+        syncEffect {
+            self.sync {
+                self._state = self.reducer.reduce(action, self._state)
+            }
+            let dispatch: (R.Action) -> () = { [weak self] in self?.dispatch($0) }
+            let getState: () -> R.State? = { [weak self] in self?.state }
+            let emit: (R.Event) -> () = { [weak self] in self?.emit($0) }
+            self.reducer.effect(action, getState, dispatch, emit)
         }
     }
 
