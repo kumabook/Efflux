@@ -12,6 +12,7 @@ open class Store<R: Reducer> {
     private let effectQueue = DispatchQueue(label: "Efflux.Store.effect")
     private let queueTag = DispatchSpecificKey<Void>()
     private let effectTag = DispatchSpecificKey<Void>()
+    private let effectReentrantKey = "Efflux.Store.effectReentrant.\(UUID().uuidString)"
 
     public class StoreSubscription: Subscription {
         weak var store: Store?
@@ -57,10 +58,14 @@ open class Store<R: Reducer> {
     }
 
     private func syncEffect<T>(_ work: () -> T) -> T {
-        if isOnEffectQueue {
+        if isOnEffectQueue || Thread.current.threadDictionary[effectReentrantKey] != nil {
             return work()
         } else {
-            return effectQueue.sync(execute: work)
+            return effectQueue.sync {
+                Thread.current.threadDictionary[effectReentrantKey] = true
+                defer { Thread.current.threadDictionary.removeObject(forKey: self.effectReentrantKey) }
+                return work()
+            }
         }
     }
 
